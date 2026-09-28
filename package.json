@@ -1,0 +1,7 @@
+{
+  "license": "Apache-2.0",
+  "name": "geastack-pebble-repo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The Pebble app target for geastack apps."
+}

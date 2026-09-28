@@ -1,0 +1,6 @@
+node_modules/
+dist/
+build/
+.lock-waf*
+*.log
+.DS_Store

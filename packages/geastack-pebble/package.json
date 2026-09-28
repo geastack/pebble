@@ -1,0 +1,32 @@
+{
+  "name": "@geastack/pebble",
+  "version": "0.1.0",
+  "description": "The Pebble target for Gea apps: builds a TSX app into an installable .pbw for Pebble Time 2 (emery), no firmware changes.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/geastack/pebble.git",
+    "directory": "packages/geastack-pebble"
+  },
+  "engines": {
+    "node": ">=20.19"
+  },
+  "type": "module",
+  "files": [
+    "targets",
+    "README.md",
+    "LICENSE"
+  ],
+  "peerDependencies": {
+    "@geastack/core": ">=0.1.26"
+  },
+  "dependencies": {
+    "@geastack/elements": "^0.1.2",
+    "@geastack/engine": "^0.1.6",
+    "@geastack/geaos": "^0.1.3",
+    "@geastack/host": "^0.1.8"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
