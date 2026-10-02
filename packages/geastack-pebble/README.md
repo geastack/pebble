@@ -44,6 +44,20 @@ The package installs its native framework dependencies automatically.
   and `GEA_{HOST,ENGINE,ELEMENTS,GEAOS_PACKAGE}_DIR` override them).
 - `GEA_GEATSC_BIN` can point the build at a specific compiler `dist/cli.js`.
 
+In a GeaStack development checkout, Pebble automatically uses the sibling
+`compiler/dist/cli.js`. Run `npm run build` in `compiler/` after changing the
+compiler; no environment override is needed. Published npm installations use
+the compiler installed with `@geastack/core`. An explicit `GEA_GEATSC_BIN`
+always takes precedence, and each build prints the compiler path it selected.
+
+Compiled UI, compact runtime code/allocation/number formatting, and LLVM size
+optimization with LTO are already the defaults (LLVM requires matching Clang
+and LLD installed). With the updated workspace compiler, compact mode uses
+full cycle tracing instead of the larger generational optimization. The
+workspace regression check `node compiler/test/pebble-counter-size.mjs` builds
+with these defaults and enforces a 10,000-byte counter program budget. The
+compiler changes must be released before npm installations get the same result.
+
 ## How it works
 
 A Gea app is two pieces linked apart and shipped as one ordinary app image:

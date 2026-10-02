@@ -20,7 +20,8 @@
 # Requires the Pebble SDK (`uv tool install pebble-tool`, then `pebble sdk
 # install latest`). The framework packages resolve from the app's
 # node_modules (GEA_CORE and friends override them); the compiler is the one
-# @geastack/core installs unless GEA_GEATSC_BIN names another `dist/cli.js`.
+# workspace's compiler/dist in a development checkout, otherwise the compiler
+# @geastack/core installs. GEA_GEATSC_BIN overrides either default.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -57,6 +58,7 @@ APP_NAME="$(node -e 'const p=require(process.argv[1]); console.log((p.gea&&p.gea
 
 SDK_ROOT="${PEBBLE_SDK_ROOT:-$HOME/Library/Application Support/Pebble SDK/SDKs/current}"
 [ -d "$SDK_ROOT" ] || SDK_ROOT="$HOME/.pebble-sdk/SDKs/current"
+[ -d "$SDK_ROOT" ] || SDK_ROOT="${XDG_DATA_HOME:-$HOME/.local/share}/pebble-sdk/SDKs/current"
 TOOLCHAIN="$SDK_ROOT/toolchain/arm-none-eabi/bin"
 CXX="$TOOLCHAIN/arm-none-eabi-g++"
 [ -x "$CXX" ] || { echo "build-pebble: no Pebble SDK toolchain at $TOOLCHAIN (run: pebble sdk install latest)" >&2; exit 1; }
@@ -69,8 +71,9 @@ PROJECT="$OUT/project"
 mkdir -p "$GEN" "$OBJ" "$PROJECT/src/c" "$PROJECT/resources"
 
 echo "==> compile $APP_ID (TSX -> C++)"
-GEATSC_ARGS=()
-[ -n "${GEA_GEATSC_BIN:-}" ] && GEATSC_ARGS=(--geatsc-bin "$GEA_GEATSC_BIN")
+GEATSC_BIN="$(node "$HERE/tools/resolve-compiler.mjs" "$HERE" "$GEA_CORE")"
+echo "    compiler: $GEATSC_BIN"
+GEATSC_ARGS=(--geatsc-bin "$GEATSC_BIN")
 # The compiled UI (plugin/index.mjs) resolves the template, styles and layout
 # at build time and leaves the program only its drawing. A program it cannot
 # express keeps the engine; GEA_PEBBLE_UI=engine asks for the engine outright.
@@ -159,9 +162,14 @@ else
 fi
 compile -c "$GEN/index.cpp" -o "$OBJ/index.o" &
 # The Pebble-side runtime throws nothing, so it carries no unwind tables. A JS
-# exception that escapes a handler through it was uncaught anyway.
+# exception that escapes a handler through it was uncaught anyway. The framework
+# headers it includes do contain `throw` and `try` (the host layer's RTC and PCM
+# helpers), which -fno-exceptions rejects outright, so the LLVM build keeps the
+# -fignore-exceptions it already compiles the program with (parsed, never
+# emitted), and the GCC build -- which has no such mode -- leaves exceptions on
+# and lets --gc-sections drop what nothing references.
 for unit in pebble_program "$UI_UNIT" pebble_support pebble_services; do
-	compile -fno-exceptions -c "$HERE/runtime/$unit.cpp" -o "$OBJ/$unit.o" &
+	compile -c "$HERE/runtime/$unit.cpp" -o "$OBJ/$unit.o" &
 done
 wait_all() { local status=0; for job in $(jobs -p); do wait "$job" || status=1; done; return $status; }
 wait_all
