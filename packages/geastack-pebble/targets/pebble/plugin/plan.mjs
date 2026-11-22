@@ -17,7 +17,7 @@
 // refused so the program keeps the engine.
 import { computeStyle } from './styles.mjs'
 import { layout, LayoutError } from './layout.mjs'
-import { fontFor } from './text.mjs'
+import { fontFor, MetricsError } from './text.mjs'
 
 export class PlanError extends Error {}
 
@@ -113,7 +113,7 @@ export const planPage = (content, rules, screen) => {
     for (const node of dynamic) fits.set(node, fitDynamicText(root, screen, nodes, node))
     layout(root, screen, () => baseWidth)
   } catch (error) {
-    if (error instanceof LayoutError) throw new PlanError(error.message)
+    if (error instanceof LayoutError || error instanceof MetricsError) throw new PlanError(error.message)
     throw error
   }
 

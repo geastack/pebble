@@ -258,15 +258,18 @@ export default {
       transformSource:
         plan.mode === 'compiled'
           ? (input) => {
+              // The component and the mount() call may share one file (a
+              // single-file app); then both rewrites apply to it in turn.
+              let text = null
               if (sameFile(input.fileName, plan.component.module)) {
                 rewritten.add('component')
-                return rewriteComponent(ts, input, plan)
+                text = rewriteComponent(ts, input, plan)
               }
               if (sameFile(input.fileName, plan.entry.file)) {
                 rewritten.add('entry')
-                return rewriteEntry(ts, input, plan)
+                text = rewriteEntry(ts, text === null ? input : { ...input, text }, plan)
               }
-              return null
+              return text
             }
           : undefined,
       writeArtifacts: (outDir) => {

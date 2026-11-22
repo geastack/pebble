@@ -8,20 +8,21 @@ components are compiled to native code instead of running on a JavaScript
 engine.
 
 ```bash
-gea build --target pebble            # -> dist/pebble/<app-id>.pbw
-gea run   --target pebble            # build, then install on the emery emulator
-gea run   --target pebble --phone 192.168.1.23   # install on a watch via its phone
+npx gea build --target pebble            # -> dist/pebble/<app-id>.pbw
+npx gea run   --target pebble            # build, then install on the emery emulator
+npx gea run   --target pebble --phone 192.168.1.23   # install on a watch via its phone
 ```
 
 An app opts in with `"pebble": true` under `gea.targets` in its `package.json`
-and a dependency on `@geastack/pebble`.
+and dependencies on `@geastack/pebble` and `@geastack/cli`; run the commands
+from the app folder.
 
 ## Getting started
 
 Use **@geastack/cli 0.1.85 or newer**. In your existing Gea app, install:
 
 ```sh
-npm install @geastack/core@^0.1.26 @geastack/pebble@^0.1.0
+npm install @geastack/core@^0.1.53 @geastack/pebble
 npm install --save-dev @geastack/cli@^0.1.85
 ```
 
@@ -37,9 +38,15 @@ The package installs its native framework dependencies automatically.
 ## Requirements
 
 - The Pebble SDK: `uv tool install --python 3.13 pebble-tool`, then
-  `pebble sdk install latest`. The build uses the SDK's `arm-none-eabi` GCC and
-  its `pebble build`/`pebble install`.
-- `@geastack/core` ≥ 0.1.26 and the engine, host, elements and geaos packages
+  `pebble sdk install latest`. The build uses the SDK's `arm-none-eabi`
+  libraries and its `pebble build`/`pebble install`.
+- LLVM: a `clang` and `ld.lld` of the same release (macOS:
+  `brew install llvm lld`; Debian/Ubuntu: `sudo apt install clang lld`). The
+  build finds `ld.lld` on `PATH` or under `/usr/lib/llvm-<version>/bin`, and
+  stops without it.
+- Node.js 22 or later for `@geastack/cli`.
+- `@geastack/core` 0.1.53 or later (the peer dependency) and the engine, host,
+  elements and geaos packages
   installed automatically (they resolve from the app or Pebble package; `GEA_CORE`
   and `GEA_{HOST,ENGINE,ELEMENTS,GEAOS_PACKAGE}_DIR` override them).
 - `GEA_GEATSC_BIN` can point the build at a specific compiler `dist/cli.js`.
@@ -51,12 +58,10 @@ the compiler installed with `@geastack/core`. An explicit `GEA_GEATSC_BIN`
 always takes precedence, and each build prints the compiler path it selected.
 
 Compiled UI, compact runtime code/allocation/number formatting, and LLVM size
-optimization with LTO are already the defaults (LLVM requires matching Clang
-and LLD installed). With the updated workspace compiler, compact mode uses
-full cycle tracing instead of the larger generational optimization. The
-workspace regression check `node compiler/test/pebble-counter-size.mjs` builds
-with these defaults and enforces a 10,000-byte counter program budget. The
-compiler changes must be released before npm installations get the same result.
+optimization with LTO are the defaults. Compact mode uses full cycle tracing instead of the larger
+generational optimization. In a development checkout,
+`node compiler/test/pebble-counter-size.mjs` builds the counter with these
+defaults and enforces a 10,000-byte program budget.
 
 ## How it works
 
@@ -72,8 +77,9 @@ the firmware loaded it and calls its entry table (`GeaPebbleProgram`). The
 program runs its own static constructors and reaches PebbleOS only through the
 host table (`GeaPebbleHost`) the shell passes it. `runtime/pebble_bridge.h` is
 the whole contract. PebbleOS loads at most 64 KB of app image
-(`PebbleProcessInfo.load_size` is a `uint16_t`); the counter's is 14 KB and
-bouncing balls' 54 KB.
+(`PebbleProcessInfo.load_size` is a `uint16_t`). In the earlier measurements
+under Size, the counter's app image (shell plus program, the load size) was
+14 KB and bouncing balls' 54 KB.
 
 On the Pebble Time 2 (SiFli SF32LB52) a store-exclusive to app RAM never
 succeeds, so an LDREX/STREX retry loop -- any atomic from libstdc++ or libgcc
@@ -124,12 +130,7 @@ second (`Display.setFrameRate` lowers it). On the watch:
   clicks it. **BACK** exits.
 - **Touch** taps the element under the finger, as on the web.
 
-## Release validation
-
-The initial npm release builds `counter-jsx` with the published compiler
-1.0.18, core 0.1.26 and engine 0.1.6. The resulting `.pbw` packages successfully
-with the installed Pebble SDK. Physical-watch behavior was tested before this
-release; the new packaging and random hook have build validation only.
+## Random numbers
 
 `Math.random` uses the SDK's PRNG, seeded at app startup, through bridge ABI 2.
 It is not a cryptographic entropy source. The shell and program are rebuilt
@@ -137,23 +138,29 @@ together so their ABI versions stay aligned.
 
 ## Size
 
-The figures below are earlier measurements, not a guarantee for every compiler
-version. Rebuild and use the size-report tool for the installed toolchain.
+The figures below are earlier measurements of the `counter-jsx` and
+`bouncing-balls-jsx` example apps with the compiler and core of that time, not
+a guarantee for every compiler version; the current examples are not set up
+for Pebble as they stand. Rebuild your app and use the size-report tool for
+the installed toolchain. Three sizes appear: the **program** (the linked
+`program.elf`), the **app image** (shell plus program, what PebbleOS loads
+against its 64 KB limit) and the **`.pbw`** (the installable bundle).
 
-Code and heap share the 128 KB. With the compiled UI the counter example is a
-9.9 KB program (a 19.5 KB `.pbw`) that peaks at 1.3 KB of heap, leaving 116 KB
-free after it loads. `bouncing-balls-jsx` keeps the engine: a 49 KB program
-with 64 nodes, each with three reactive style members, leaving 75.7 KB of heap
-at launch.
+Code and heap share the 128 KB. With the compiled UI the counter was a 9.9 KB
+program (14 KB app image, 19.5 KB `.pbw`) that peaked at 1.3 KB of heap,
+leaving 116 KB free after it loaded. `bouncing-balls-jsx` keeps the engine: a
+49 KB program (54 KB app image) with 64 nodes, each with three reactive style
+members, leaving 75.7 KB of heap at launch.
 `tools/size-report.mjs <program.elf>` shows where the bytes go, by area, and a
 build with `GEA_PEBBLE_ALLOC_TRACE=1` logs every allocation for
 `tools/heap-report.mjs`. What keeps it there:
 
-- **LLVM when installed.** With a clang and `ld.lld` of the same release on the
-  machine (`brew install llvm lld`), the program is built `-Oz` with the machine
-  outliner and full LTO with virtual function elimination, against the SDK's
-  newlib-nano and libstdc++. GCC remains the fallback;
-  `GEA_PEBBLE_TOOLCHAIN=gcc` forces it.
+- **LLVM.** With a clang and `ld.lld` of the same release, the program is
+  built `-Oz` with the machine outliner and full LTO with virtual function
+  elimination, against the SDK's newlib-nano and libstdc++.
+  `GEA_PEBBLE_TOOLCHAIN=gcc` forces the SDK's GCC instead, which keeps every
+  virtual function and with them libstdc++ locale and exception code that does
+  not link against the shell's runtime stubs.
 - **No unwinder, no static destructors.** `GEA_RUNTIME_THROW_ENDS_PROGRAM`
   makes every `throw` (spelled `GEA_THROW` by the emitter) log and end the app
   without boxing the thrown value, so `catch` never runs and no landing pads

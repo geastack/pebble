@@ -49,10 +49,16 @@ export const fontFor = (sizePx, weight) => {
 
 export const lineHeight = (font) => metrics.fonts[font].lineHeight
 
+/** A character the captured firmware metrics do not cover; the page keeps the engine. */
+export class MetricsError extends Error {}
+
 const advance = (font, char) => {
   const code = char.charCodeAt(0) - metrics.firstCode
   const width = metrics.fonts[font].advances[code]
-  if (width === undefined) throw new Error(`no metrics for ${JSON.stringify(char)}`)
+  if (width === undefined) {
+    const hex = char.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')
+    throw new MetricsError(`no font metrics for ${JSON.stringify(char)} (U+${hex})`)
+  }
   return width
 }
 

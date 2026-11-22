@@ -18,7 +18,7 @@
 # Output: <app-dir>/dist/pebble/<app-id>.pbw
 #
 # Requires the Pebble SDK (`uv tool install pebble-tool`, then `pebble sdk
-# install latest`). The framework packages resolve from the app's
+# install latest`) and a clang and ld.lld of one LLVM release. The framework packages resolve from the app's
 # node_modules (GEA_CORE and friends override them); the compiler is the one
 # workspace's compiler/dist in a development checkout, otherwise the compiler
 # @geastack/core installs. GEA_GEATSC_BIN overrides either default.
@@ -63,6 +63,41 @@ TOOLCHAIN="$SDK_ROOT/toolchain/arm-none-eabi/bin"
 CXX="$TOOLCHAIN/arm-none-eabi-g++"
 [ -x "$CXX" ] || { echo "build-pebble: no Pebble SDK toolchain at $TOOLCHAIN (run: pebble sdk install latest)" >&2; exit 1; }
 PEBBLE="$(command -v pebble || echo "$HOME/.local/bin/pebble")"
+
+# LLVM builds the program, from a clang and ld.lld of one release, against
+# the SDK's own newlib-nano and libstdc++: -Oz plus the machine outliner, and
+# full LTO with virtual function elimination, which drops the reflection hooks
+# every class vtable names but a program never calls. GCC keeps every virtual
+# a vtable references, and with them the runtime's std::regex support and the
+# libstdc++ locale and exception code it reaches, which do not link against
+# the shell's runtime stubs. So LLVM is required; GEA_PEBBLE_TOOLCHAIN=gcc
+# still forces the SDK's GCC.
+find_llvm() {
+	[ "${GEA_PEBBLE_TOOLCHAIN:-}" = gcc ] && return 1
+	local lld clang candidate
+	# ld.lld on PATH (Homebrew, LLVM releases), then the versioned LLVM
+	# installs Debian and Ubuntu put under /usr/lib/llvm-<major>, newest first.
+	for lld in "$(command -v ld.lld || true)" $(ls -d /usr/lib/llvm-*/bin/ld.lld 2>/dev/null | sort -t- -k2 -n -r); do
+		[ -n "$lld" ] && [ -x "$lld" ] || continue
+		for candidate in "${GEA_PEBBLE_CLANG:-}" "$(dirname "$lld")/clang++" /opt/homebrew/opt/llvm/bin/clang++ /usr/local/opt/llvm/bin/clang++; do
+			[ -n "$candidate" ] && [ -x "$candidate" ] || continue
+			# Bitcode is read by the linker's own LLVM: the majors must agree.
+			if [ "$("$candidate" --version | sed -n 's/.*clang version \([0-9]*\).*/\1/p' | head -1)" = "$("$lld" --version | sed -n 's/.*LLD \([0-9]*\).*/\1/p')" ]; then
+				CLANG="$candidate"
+				LLD="$lld"
+				return 0
+			fi
+		done
+	done
+	return 1
+}
+USE_LLVM=0
+if find_llvm; then
+	USE_LLVM=1
+elif [ "${GEA_PEBBLE_TOOLCHAIN:-}" != gcc ]; then
+	echo "build-pebble: no LLVM toolchain: install clang and ld.lld of the same release (macOS: brew install llvm lld; Debian/Ubuntu: sudo apt install clang lld)" >&2
+	exit 1
+fi
 
 OUT="$APP_DIR/dist/pebble"
 GEN="$OUT/.generated/$APP_ID"
@@ -115,32 +150,9 @@ COMMON_FLAGS=(
 [ "${GEA_PEBBLE_ALLOC_TRACE:-}" = 1 ] && COMMON_FLAGS+=(-DGEA_PEBBLE_ALLOC_TRACE=1)
 [ "$UI_UNIT" = pebble_compiled_ui ] && COMMON_FLAGS+=(-DGEA_PEBBLE_COMPILED_UI=1)
 
-# LLVM builds the program when a clang and ld.lld of one release are
-# installed, against the SDK's own newlib-nano and libstdc++. It is ~15%
-# smaller than GCC for the same source: -Oz plus the machine outliner, and
-# full LTO with virtual function elimination, which drops the reflection hooks
-# every class vtable names but a program never calls -- GCC keeps every
-# virtual a vtable references. GEA_PEBBLE_TOOLCHAIN=gcc forces the SDK's GCC.
-find_llvm() {
-	[ "${GEA_PEBBLE_TOOLCHAIN:-}" = gcc ] && return 1
-	local lld clang candidate
-	lld="$(command -v ld.lld || true)"
-	[ -n "$lld" ] || return 1
-	for candidate in "${GEA_PEBBLE_CLANG:-}" "$(dirname "$lld")/clang++" /opt/homebrew/opt/llvm/bin/clang++ /usr/local/opt/llvm/bin/clang++; do
-		[ -n "$candidate" ] && [ -x "$candidate" ] || continue
-		# Bitcode is read by the linker's own LLVM: the majors must agree.
-		if [ "$("$candidate" --version | sed -n 's/.*clang version \([0-9]*\).*/\1/p' | head -1)" = "$("$lld" --version | sed -n 's/.*LLD \([0-9]*\).*/\1/p')" ]; then
-			CLANG="$candidate"
-			LLD="$lld"
-			return 0
-		fi
-	done
-	return 1
-}
-
 echo "==> cross-compile program"
 PROGRAM_OBJECTS=("$OBJ/pebble_program.o" "$OBJ/index.o" "$OBJ/$UI_UNIT.o" "$OBJ/pebble_support.o" "$OBJ/pebble_services.o")
-if find_llvm; then
+if [ "$USE_LLVM" = 1 ]; then
 	echo "    (LLVM: $CLANG)"
 	SYSROOT="$SDK_ROOT/toolchain/arm-none-eabi/arm-none-eabi"
 	GCC_VERSION="$("$CXX" -dumpversion)"
@@ -152,7 +164,7 @@ if find_llvm; then
 		-isystem "$SYSROOT/include/c++/$GCC_VERSION/arm-none-eabi/$MULTILIB"
 		-isystem "$SYSROOT/include/c++/$GCC_VERSION/backward"
 		-isystem "$SYSROOT/include"
-		-Oz -flto=full -fvisibility=hidden -fwhole-program-vtables -fvirtual-function-elimination -fno-c++-static-destructors -fignore-exceptions
+		-fsized-deallocation -Oz -flto=full -fvisibility=hidden -fwhole-program-vtables -fvirtual-function-elimination -fno-c++-static-destructors -fignore-exceptions
 		"${COMMON_FLAGS[@]}"
 	)
 	compile() { "$CLANG" "${CXXFLAGS[@]}" "$@"; }

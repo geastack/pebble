@@ -1251,7 +1251,7 @@ int Document::preferredMountHeight()
 
 NodeHandle::NodeTypeProperty::operator int() const
 {
-	const PNode *node = nodeAt(id);
+	const PNode *node = nodeAt(id_);
 	if (!node) return 11;
 	return node->text && !*node->tag ? 3 : 1;
 }
@@ -1266,9 +1266,9 @@ void NodeHandle::appendChild(NodeHandle child) const
 	invalidate(true);
 }
 
-void NodeHandle::insertBefore(NodeHandle child, NodeHandle reference) const
+NodeHandle NodeHandle::insertBefore(NodeHandle child, NodeHandle reference) const
 {
-	if (!nodeAt(id_) || !nodeAt(child.id())) return;
+	if (!nodeAt(id_) || !nodeAt(child.id())) return NodeHandle();
 	detach(child.id());
 	auto &list = nodeAt(id_)->children;
 	std::size_t at = list.size();
@@ -1278,6 +1278,7 @@ void NodeHandle::insertBefore(NodeHandle child, NodeHandle reference) const
 	list.insert(list.begin() + static_cast<std::ptrdiff_t>(at), child.id());
 	nodeAt(child.id())->parent = id_;
 	invalidate(true);
+	return child;
 }
 
 void NodeHandle::replaceChildren(const std::vector<NodeHandle> &children) const
@@ -1383,6 +1384,19 @@ const char *NodeHandle::getAttribute(const char *name) const
 	if (!std::strcmp(name, "class") || !std::strcmp(name, "className")) return node->classes.c_str();
 	if (!std::strcmp(name, "id")) return elementIdOf(id_);
 	return nullptr;
+}
+
+bool NodeHandle::isConnected() const
+{
+	const int root = state().root;
+	int current = id_;
+	for (std::size_t remaining = state().nodes.size(); remaining > 0; --remaining) {
+		const PNode *node = nodeAt(current);
+		if (!node) return false;
+		if (current == root) return true;
+		current = node->parent;
+	}
+	return false;
 }
 
 bool NodeHandle::hasAttribute(const char *name) const

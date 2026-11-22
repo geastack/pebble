@@ -30,12 +30,13 @@ mount(App)
 ```
 
 An app opts in with `"pebble": true` under `gea.targets` in its `package.json`
-and a dependency on `@geastack/pebble`. Then:
+and dependencies on `@geastack/pebble` and `@geastack/cli` (see Getting
+started). Then, from the app folder:
 
 ```sh
-gea build --target pebble                        # -> dist/pebble/<app-id>.pbw
-gea run   --target pebble                        # build and install on the emery emulator
-gea run   --target pebble --phone 192.168.1.23   # install on a watch through its phone
+npx gea build --target pebble                        # -> dist/pebble/<app-id>.pbw
+npx gea run   --target pebble                        # build and install on the emery emulator
+npx gea run   --target pebble --phone 192.168.1.23   # install on a watch through its phone
 ```
 
 UP/DOWN move focus between controls, SELECT presses, BACK exits, and a tap hits
@@ -43,7 +44,14 @@ the element under the finger.
 
 ## What runs
 
-These are earlier device measurements; sizes vary with the compiler version.
+Earlier device measurements of two example apps, taken with the compiler and
+core of that time; sizes vary with the compiler version. "Program" is the
+compiled TSX, runtime and UI backend linked into the app (see the package
+README for the shell/program split). The current `counter-jsx` and
+`bouncing-balls-jsx` examples are not set up to build for Pebble as they
+stand (`bouncing-balls-jsx` no longer declares the target, and `counter-jsx`
+does not depend on `@geastack/pebble`), so these rows are not reproducible
+from them without the setup below.
 
 | app | program | notes |
 | --- | --- | --- |
@@ -69,7 +77,7 @@ flexbox engine that paints with PebbleOS graphics and system fonts.
 Use **@geastack/cli 0.1.85 or newer**. In your existing Gea app, install:
 
 ```sh
-npm install @geastack/core@^0.1.26 @geastack/pebble@^0.1.0
+npm install @geastack/core@^0.1.53 @geastack/pebble
 npm install --save-dev @geastack/cli@^0.1.85
 ```
 
@@ -86,9 +94,12 @@ The package installs its native framework dependencies automatically.
 
 - The Pebble SDK: `uv tool install --python 3.13 pebble-tool`, then
   `pebble sdk install latest`.
-- `@geastack/core` ≥ 0.1.26 and the geatsc compiler.
-- Optionally LLVM (`brew install llvm lld`): the program is then built `-Oz`
-  with full LTO, noticeably smaller than with the SDK's GCC.
+- `@geastack/core` 0.1.53 or later (the package's peer dependency), which
+  brings the geatsc compiler.
+- Node.js 22 or later for `@geastack/cli`.
+- LLVM: a `clang` and `ld.lld` of the same release (macOS:
+  `brew install llvm lld`; Debian/Ubuntu: `sudo apt install clang lld`). The
+  program is built `-Oz` with full LTO; the build stops without them.
 
 ## License
 
